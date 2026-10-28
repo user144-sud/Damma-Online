@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Online Multiplayer Checkers</title>
+  <!-- WebRTC library for cross-device P2P connection -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    /* Strict palette: #ffffff, #000000, #c19a6b, #3d2314 */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: monospace, sans-serif;
+      outline: none;
+    }
+
+    body {
+      background-color: #ffffff; /* Pure white site background */
+      color: #3d2314;            /* Dark brown text */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 16px;
+      border-bottom: 3px solid #3d2314;
+      width: 100%;
+      max-width: 520px;
+      padding-bottom: 6px;
+    }
+
+    h1 {
+      color: #3d2314;
+      font-size: 24px;
+      letter-spacing: 2px;
+    }
+
+    /* Room Bar */
+    .room-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      max-width: 500px;
+      background-color: #ffffff;
+      border: 2px solid #3d2314;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    .room-group {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    input[type="text"] {
+      width: 70px;
+      height: 32px;
+      text-align: center;
+      font-size: 16px;
+      font-weight: bold;
+      background-color: #ffffff;
+      color: #000000;
+      border: 2px solid #3d2314;
+    }
+
+    button {
+      background-color: #3d2314;
+      color: #ffffff;
+      border: 2px solid #c19a6b;
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #c19a6b;
+      color: #000000;
+      border-color: #3d2314;
+    }
+
+    /* Status Panels */
+    .id-panel {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      justify-content: space-between;
+      background-color: #3d2314;
+      color: #ffffff;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .id-panel span {
+      color: #ffffff;
+    }
+
+    .status-panel {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 500px;
+      margin-bottom: 14px;
+      background-color: #c19a6b;
+      color: #000000;
+      border: 2px solid #3d2314;
+      padding: 8px 12px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .status-panel span {
+      color: #000000;
+    }
+
+    /* Board */
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 60px);
+      grid-template-rows: repeat(8, 60px);
+      border: 10px solid #3d2314;
+      background-color: #3d2314;
+    }
+
+    .tile {
+      width: 60px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+
+    .tile-light {
+      background-color: #c19a6b; /* Wood brown */
+    }
+
+    .tile-dark {
+      background-color: #3d2314; /* Dark brown */
+      cursor: pointer;
+    }
+
+    /* Pieces */
+    .piece {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 18px;
+    }
+
+    .piece-white {
+      background-color: #ffffff;
+      color: #000000;
+      border: 3px solid #000000;
+    }
+
+    .piece-black {
+      background-color: #000000;
+      color: #ffffff;
+      border: 3px solid #ffffff;
+    }
+
+    .selected {
+      border: 4px solid #c19a6b !important;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>CHECKERS ONLINE MULTIPLAYER</h1>
+  </header>
+
+  <!-- Room Controls -->
+  <div class="room-bar">
+    <button onclick="createRoom()">CREATE ROOM</button>
+    <div class="room-group">
+      <input type="text" id="roomInput" maxlength="4" placeholder="0000">
+      <button onclick="joinRoom()">JOIN ROOM</button>
+    </div>
+  </div>
+
+  <div class="id-panel">
+    <span id="roomInfo">ROOM: NONE</span>
+    <span id="teamInfo">YOUR TEAM: NOT SET</span>
+  </div>
+
+  <div class="status-panel">
+    <span id="turnText">TURN: WAITING FOR GAME</span>
+    <span id="ruleMessage">CREATE OR JOIN A ROOM</span>
+  </div>
+
+  <!-- Game Board -->
+  <div class="board" id="board"></div>
+
+  <script>
+    // Game State
+    let boardState = [];
+    let turn = "W"; 
+    let myTeam = null;        // "W" (White) or "B" (Black)
+    let assignedGuestTeam = null; // Assigned to the joiner by host
+    let currentRoomCode = null;
+    let selected = null;
+    let isHost = false;
+
+    // Multiplayer Channels
+    let localChannel = null;
+    let peer = null;
+    let p2pConn = null;
+
+    function resetBoard() {
+      boardState = [
+        ["", "B", "", "B", "", "B", "", "B"],
+        ["B", "", "B", "", "B", "", "B", ""],
+        ["", "B", "", "B", "", "B", "", "B"],
+        ["", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", ""],
+        ["W", "", "W", "", "W", "", "W", ""],
+        ["", "W", "", "W", "", "W", "", "W"],
+        ["W", "", "W", "", "W", "", "W", ""]
+      ];
+      turn = "W";
+      selected = null;
+    }
+
+    function renderBoard() {
+      const boardEl = document.getElementById("board");
+      boardEl.innerHTML = "";
+
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const tile = document.createElement("div");
+          const isDark = (r + c) % 2 === 1;
+
+          tile.classList.add("tile");
+          tile.classList.add(isDark ? "tile-dark" : "tile-light");
+
+          if (isDark) {
+            tile.onclick = () => onTileClick(r, c);
+
+            const val = boardState[r][c];
+            if (val !== "") {
+              const piece = document.createElement("div");
+              piece.classList.add("piece");
+
+              if (val.startsWith("W")) {
+                piece.classList.add("piece-white");
+              } else {
+                piece.classList.add("piece-black");
+              }
+
+              if (val.endsWith("K")) {
+                piece.textContent = "K"; // King
+              }
+
+              if (selected && selected.r === r && selected.c === c) {
+                piece.classList.add("selected");
+              }
+
+              tile.appendChild(piece);
+            }
+          }
+
+          boardEl.appendChild(tile);
+        }
+      }
+    }
+
+    function onTileClick(r, c) {
+      if (!myTeam) {
+        document.getElementById("ruleMessage").textContent = "CREATE OR JOIN A ROOM FIRST";
+        return;
+      }
+
+      if (turn !== myTeam) {
+        document.getElementById("ruleMessage").textContent = "WAIT: OPPONENT'S TURN";
+        return;
+      }
+
+      const currentPiece = boardState[r][c];
+
+      // Select piece belonging to the player's team
+      if (currentPiece !== "" && currentPiece.startsWith(myTeam)) {
+        selected = { r, c };
+        document.getElementById("ruleMessage").textContent = "CHOOSE DESTINATION";
+        renderBoard();
+        return;
+      }
+
+      // Try moving if already selected
+      if (selected && currentPiece === "") {
+        tryMove(selected.r, selected.c, r, c);
+      }
+    }
+
+    function tryMove(fromR, fromC, toR, toC) {
+      const piece = boardState[fromR][fromC];
+      const isKing = piece.endsWith("K");
+      const direction = piece.startsWith("W") ? -1 : 1;
+
+      const diffR = toR - fromR;
+      const diffC = toC - fromC;
+
+      // 1. Regular move (1 diagonal step)
+      const validRegular = isKing 
+        ? Math.abs(diffR) === 1 && Math.abs(diffC) === 1
+        : diffR === direction && Math.abs(diffC) === 1;
+
+      if (validRegular) {
+        executeMove(fromR, fromC, toR, toC);
+        return;
+      }
+
+      // 2. Jump move (2 diagonal steps with opponent capture)
+      if (Math.abs(diffR) === 2 && Math.abs(diffC) === 2) {
+        const midR = fromR + diffR / 2;
+        const midC = fromC + diffC / 2;
+        const captured = boardState[midR][midC];
+        const opponent = myTeam === "W" ? "B" : "W";
+
+        if (captured !== "" && captured.startsWith(opponent)) {
+          if (isKing || diffR === direction * 2) {
+            boardState[midR][midC] = "";
+            executeMove(fromR, fromC, toR, toC);
+            return;
+          }
+        }
+      }
+
+      document.getElementById("ruleMessage").textContent = "INVALID MOVE";
+    }
+
+    function executeMove(fromR, fromC, toR, toC) {
+      let piece = boardState[fromR][fromC];
+      boardState[fromR][fromC] = "";
+
+      // Promotion to King
+      if (piece === "W" && toR === 0) piece = "WK";
+      if (piece === "B" && toR === 7) piece = "BK";
+
+      boardState[toR][toC] = piece;
+      selected = null;
+
+      // Switch turn
+      turn = (turn === "W") ? "B" : "W";
+
+      updateUI();
+      renderBoard();
+
+      // Transmit move
+      broadcast({
+        type: "MOVE",
+        board: boardState,
+        turn: turn
+      });
+    }
+
+    function updateUI() {
+      const turnText = document.getElementById("turnText");
+      const isMyTurn = turn === myTeam;
+
+      turnText.textContent = turn === "W" ? "TURN: WHITE" : "TURN: BLACK";
+
+      if (isMyTurn) {
+        document.getElementById("ruleMessage").textContent = "YOUR TURN TO PLAY!";
+      } else {
+        document.getElementById("ruleMessage").textContent = "OPPONENT'S TURN...";
+      }
+    }
+
+    /* ---------------- MULTIPLAYER & RANDOM TEAM ASSIGNMENT ---------------- */
+
+    function createRoom() {
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      currentRoomCode = code;
+      isHost = true;
+      document.getElementById("roomInput").value = code;
+
+      // RANDOM TEAM SELECTION
+      myTeam = Math.random() < 0.5 ? "W" : "B";
+      assignedGuestTeam = (myTeam === "W") ? "B" : "W";
+
+      document.getElementById("roomInfo").textContent = "ROOM: " + code;
+      document.getElementById("teamInfo").textContent = "YOUR TEAM: " + (myTeam === "W" ? "WHITE (RANDOM)" : "BLACK (RANDOM)");
+      document.getElementById("ruleMessage").textContent = "WAITING FOR OPPONENT...";
+
+      resetBoard();
+      updateUI();
+      renderBoard();
+
+      setupNetwork(code, true);
+    }
+
+    function joinRoom() {
+      const input = document.getElementById("roomInput").value.trim();
+      if (!/^\d{4}$/.test(input)) {
+        alert("Please enter a valid 4-digit code.");
+        return;
+      }
+
+      currentRoomCode = input;
+      isHost = false;
+      myTeam = null; // Will be received randomly from the host
+
+      document.getElementById("roomInfo").textContent = "ROOM: " + input;
+      document.getElementById("teamInfo").textContent = "CONNECTING & ASSIGNING TEAM...";
+
+      resetBoard();
+      renderBoard();
+
+      setupNetwork(input, false);
+    }
+
+    function setupNetwork(code, amIHost) {
+      // 1. Local sync (multiple tabs on the same computer)
+      if (localChannel) localChannel.close();
+      localChannel = new BroadcastChannel("checkers_room_" + code);
+      localChannel.onmessage = (e) => handleMessage(e.data);
+
+      // 2. Cross-device WebRTC P2P sync
+      const hostPeerId = "checkers-room-v2-" + code;
+
+      try {
+        if (typeof Peer !== "undefined") {
+          if (amIHost) {
+            if (peer) peer.destroy();
+            peer = new Peer(hostPeerId);
+            peer.on("connection", (conn) => {
+              p2pConn = conn;
+              conn.on("data", (data) => handleMessage(data));
+              // Send random team assignment to guest
+              conn.on("open", () => {
+                conn.send({
+                  type: "ASSIGN_TEAM",
+                  assignedTeam: assignedGuestTeam,
+                  board: boardState,
+                  turn: turn
+                });
+              });
+            });
+          } else {
+            if (peer) peer.destroy();
+            peer = new Peer();
+            peer.on("open", () => {
+              p2pConn = peer.connect(hostPeerId);
+              p2pConn.on("open", () => {
+                broadcast({ type: "REQUEST_TEAM" });
+              });
+              p2pConn.on("data", (data) => handleMessage(data));
+            });
+          }
+        }
+      } catch (err) {
+        console.log("Local mode active.");
+      }
+
+      if (!amIHost) {
+        broadcast({ type: "REQUEST_TEAM" });
+      }
+    }
+
+    function broadcast(data) {
+      if (localChannel) localChannel.postMessage(data);
+      if (p2pConn && p2pConn.open) p2pConn.send(data);
+    }
+
+    function handleMessage(data) {
+      if (!data) return;
+
+      if (data.type === "REQUEST_TEAM" && isHost) {
+        // Send assigned random team to the joining player
+        broadcast({
+          type: "ASSIGN_TEAM",
+          assignedTeam: assignedGuestTeam,
+          board: boardState,
+          turn: turn
+        });
+        document.getElementById("ruleMessage").textContent = "OPPONENT JOINED! GAME READY.";
+      } else if (data.type === "ASSIGN_TEAM" && !isHost) {
+        // Guest receives their randomly assigned team
+        myTeam = data.assignedTeam;
+        boardState = data.board;
+        turn = data.turn;
+
+        document.getElementById("teamInfo").textContent = "YOUR TEAM: " + (myTeam === "W" ? "WHITE (RANDOM)" : "BLACK (RANDOM)");
+        renderBoard();
+        updateUI();
+      } else if (data.type === "MOVE") {
+        boardState = data.board;
+        turn = data.turn;
+        selected = null;
+        renderBoard();
+        updateUI();
+      }
+    }
+
+    // Default setup
+    resetBoard();
+    renderBoard();
+  </script>
+</body>
+</html>
