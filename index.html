@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Online Multiplayer & AI Checkers</title>
+  <!-- WebRTC library for cross-device P2P connection -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    /* Strict palette: #ffffff, #000000, #c19a6b, #3d2314 + #ff0000 for arrows */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: monospace, sans-serif;
+      outline: none;
+    }
+
+    body {
+      background-color: #ffffff;
+      color: #3d2314;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 16px;
+      border-bottom: 3px solid #3d2314;
+      width: 100%;
+      max-width: 520px;
+      padding-bottom: 6px;
+    }
+
+    h1 {
+      color: #3d2314;
+      font-size: 24px;
+      letter-spacing: 2px;
+    }
+
+    /* Action & Room Bar */
+    .room-bar {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      max-width: 500px;
+      background-color: #ffffff;
+      border: 2px solid #3d2314;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    .room-group {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+
+    input[type="text"] {
+      width: 70px;
+      height: 32px;
+      text-align: center;
+      font-size: 16px;
+      font-weight: bold;
+      background-color: #ffffff;
+      color: #000000;
+      border: 2px solid #3d2314;
+    }
+
+    button {
+      background-color: #3d2314;
+      color: #ffffff;
+      border: 2px solid #c19a6b;
+      padding: 7px 14px;
+      font-size: 13px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #c19a6b;
+      color: #000000;
+      border-color: #3d2314;
+    }
+
+    /* Status Panels */
+    .id-panel {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      justify-content: space-between;
+      background-color: #3d2314;
+      color: #ffffff;
+      padding: 8px 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: bold;
+    }
+
+    .id-panel span {
+      color: #ffffff;
+    }
+
+    .status-panel {
+      display: flex;
+      justify-content: space-between;
+      width: 100%;
+      max-width: 500px;
+      margin-bottom: 14px;
+      background-color: #c19a6b;
+      color: #000000;
+      border: 2px solid #3d2314;
+      padding: 8px 12px;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .status-panel span {
+      color: #000000;
+    }
+
+    /* Board Wrapper */
+    .board-container {
+      position: relative;
+      width: 500px;
+      height: 500px;
+    }
+
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 60px);
+      grid-template-rows: repeat(8, 60px);
+      border: 10px solid #3d2314;
+      background-color: #3d2314;
+      width: 500px;
+      height: 500px;
+    }
+
+    /* SVG Layer for Red Arrows */
+    .arrow-layer {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: 480px;
+      height: 480px;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .tile {
+      width: 60px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+    }
+
+    .tile-light {
+      background-color: #c19a6b;
+    }
+
+    .tile-dark {
+      background-color: #3d2314;
+      cursor: pointer;
+    }
+
+    /* Pieces */
+    .piece {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 18px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .piece-white {
+      background-color: #ffffff;
+      color: #000000;
+      border: 3px solid #000000;
+    }
+
+    .piece-black {
+      background-color: #000000;
+      color: #ffffff;
+      border: 3px solid #ffffff;
+    }
+
+    .selected {
+      border: 4px solid #c19a6b !important;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>CHECKERS ONLINE & SMART BOT</h1>
+  </header>
+
+  <!-- Controls -->
+  <div class="room-bar">
+    <button onclick="playVsBot()">PLAY VS BOT</button>
+    <button onclick="createRoom()">CREATE ROOM</button>
+    <div class="room-group">
+      <input type="text" id="roomInput" maxlength="4" placeholder="0000">
+      <button onclick="joinRoom()">JOIN</button>
+    </div>
+  </div>
+
+  <div class="id-panel">
+    <span id="roomInfo">MODE: NONE</span>
+    <span id="teamInfo">YOUR TEAM: NOT SET</span>
+  </div>
+
+  <div class="status-panel">
+    <span id="turnText">TURN: WAITING</span>
+    <span id="ruleMessage">CHOOSE BOT OR MULTIPLAYER</span>
+  </div>
+
+  <!-- Board with SVG Overlay -->
+  <div class="board-container">
+    <div class="board" id="board"></div>
+    <svg class="arrow-layer" id="arrowLayer"></svg>
+  </div>
+
+  <script>
+    let boardState = [];
+    let turn = "W"; 
+    let myTeam = null;
+    let botTeam = null;
+    let isVsBot = false;
+    let isHost = false;
+    let assignedGuestTeam = null;
+    let currentRoomCode = null;
+
+    // Strict Selection States
+    let selectedOwn = null; 
+    let arrowSource = null; 
+
+    // Arrow State (Client-side only)
+    let preMove = null;
+    let prediction = null;
+
+    // Multiplayer Channels
+    let localChannel = null;
+    let peer = null;
+    let p2pConn = null;
+
+    function resetBoard() {
+      boardState = [
+        ["", "B", "", "B", "", "B", "", "B"],
+        ["B", "", "B", "", "B", "", "B", ""],
+        ["", "B", "", "B", "", "B", "", "B"],
+        ["", "", "", "", "", "", "", ""],
+        ["", "", "", "", "", "", "", ""],
+        ["W", "", "W", "", "W", "", "W", ""],
+        ["", "W", "", "W", "", "W", "", "W"],
+        ["W", "", "W", "", "W", "", "W", ""]
+      ];
+      turn = "W";
+      selectedOwn = null;
+      arrowSource = null;
+      preMove = null;
+      prediction = null;
+      renderArrows();
+    }
+
+    function renderBoard() {
+      const boardEl = document.getElementById("board");
+      boardEl.innerHTML = "";
+
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const tile = document.createElement("div");
+          const isDark = (r + c) % 2 === 1;
+
+          tile.classList.add("tile");
+          tile.classList.add(isDark ? "tile-dark" : "tile-light");
+
+          if (isDark) {
+            tile.onclick = () => onTileClick(r, c);
+
+            const val = boardState[r][c];
+            if (val !== "") {
+              const piece = document.createElement("div");
+              piece.classList.add("piece");
+
+              if (val.startsWith("W")) {
+                piece.classList.add("piece-white");
+              } else {
+                piece.classList.add("piece-black");
+              }
+
+              if (val.endsWith("K")) {
+                piece.textContent = "K"; // King / Dama
+              }
+
+              const isSelectedOwn = selectedOwn && selectedOwn.r === r && selectedOwn.c === c;
+              const isSelectedArrow = arrowSource && arrowSource.r === r && arrowSource.c === c;
+              if (isSelectedOwn || isSelectedArrow) {
+                piece.classList.add("selected");
+              }
+
+              tile.appendChild(piece);
+            }
+          }
+
+          boardEl.appendChild(tile);
+        }
+      }
+      renderArrows();
+    }
+
+    /* ---------------- TILE CLICKS ---------------- */
+
+    function onTileClick(r, c) {
+      if (!myTeam) {
+        document.getElementById("ruleMessage").textContent = "SELECT A MODE FIRST";
+        return;
+      }
+
+      const currentPiece = boardState[r][c];
+
+      // 1. PLAYER'S TURN
+      if (turn === myTeam) {
+        if (currentPiece !== "" && currentPiece.startsWith(myTeam)) {
+          selectedOwn = { r, c };
+          document.getElementById("ruleMessage").textContent = "CHOOSE DESTINATION";
+          renderBoard();
+          return;
+        }
+
+        if (currentPiece !== "" && !currentPiece.startsWith(myTeam)) {
+          selectedOwn = null;
+          document.getElementById("ruleMessage").textContent = "CANNOT SELECT OPPONENT'S PIECE";
+          renderBoard();
+          return;
+        }
+
+        if (selectedOwn && currentPiece === "") {
+          tryMove(selectedOwn.r, selectedOwn.c, r, c);
+        }
+        return;
+      }
+
+      // 2. OPPONENT'S / BOT'S TURN -> ARROWS ONLY
+      if (currentPiece !== "") {
+        arrowSource = { r, c, isOwn: currentPiece.startsWith(myTeam) };
+        document.getElementById("ruleMessage").textContent = arrowSource.isOwn
+          ? "CLICK DESTINATION FOR PRE-MOVE"
+          : "CLICK DESTINATION TO GUESS OPPONENT MOVE";
+        renderBoard();
+        return;
+      }
+
+      if (arrowSource && currentPiece === "") {
+        if (arrowSource.isOwn) {
+          preMove = { fromR: arrowSource.r, fromC: arrowSource.c, toR: r, toC: c };
+          document.getElementById("ruleMessage").textContent = "PRE-MOVE ARROW SET (WILL MOVE ON YOUR TURN)";
+        } else {
+          prediction = { fromR: arrowSource.r, fromC: arrowSource.c, toR: r, toC: c };
+          document.getElementById("ruleMessage").textContent = "GUESS ARROW SET (OPPONENT MOVES FREELY)";
+        }
+        arrowSource = null;
+        renderBoard();
+      }
+    }
+
+    /* ---------------- MOVE VALIDATION & ORIGINAL KING RULES ---------------- */
+
+    function tryMove(fromR, fromC, toR, toC) {
+      if (turn !== myTeam) {
+        document.getElementById("ruleMessage").textContent = "WAIT: NOT YOUR TURN";
+        return false;
+      }
+
+      const piece = boardState[fromR][fromC];
+      if (!piece || !piece.startsWith(myTeam)) {
+        document.getElementById("ruleMessage").textContent = "CANNOT MOVE OPPONENT'S PIECE";
+        selectedOwn = null;
+        renderBoard();
+        return false;
+      }
+
+      const isKing = piece.endsWith("K");
+      const diffR = toR - fromR;
+      const diffC = toC - fromC;
+      const opponent = myTeam === "W" ? "B" : "W";
+
+      // Diagonal check
+      if (Math.abs(diffR) !== Math.abs(diffC) || diffR === 0) {
+        document.getElementById("ruleMessage").textContent = "INVALID MOVE";
+        return false;
+      }
+
+      const steps = Math.abs(diffR);
+      const dr = diffR / steps;
+      const dc = diffC / steps;
+
+      /* === A. ORIGINAL FLYING KING (DAMA VOADORA) RULES === */
+      if (isKing) {
+        let pieceCount = 0;
+        let capturedR = -1;
+        let capturedC = -1;
+        let capturedPiece = "";
+
+        // Check every square along the King's diagonal path
+        for (let i = 1; i < steps; i++) {
+          const checkR = fromR + i * dr;
+          const checkC = fromC + i * dc;
+          const p = boardState[checkR][checkC];
+
+          if (p !== "") {
+            pieceCount++;
+            capturedR = checkR;
+            capturedC = checkC;
+            capturedPiece = p;
+          }
+        }
+
+        // Case 1: Flying move (any distance along empty diagonal)
+        if (pieceCount === 0) {
+          executeMove(fromR, fromC, toR, toC);
+          return true;
+        }
+
+        // Case 2: Flying capture (jumps over exactly 1 opponent piece at any distance)
+        if (pieceCount === 1 && capturedPiece.startsWith(opponent)) {
+          boardState[capturedR][capturedC] = ""; // Remove captured piece
+          executeMove(fromR, fromC, toR, toC);
+          return true;
+        }
+
+        document.getElementById("ruleMessage").textContent = "INVALID KING MOVE";
+        return false;
+      }
+
+      /* === B. REGULAR PIECE RULES === */
+      const direction = piece.startsWith("W") ? -1 : 1;
+
+      // Regular step (1 step diagonally forward)
+      if (steps === 1 && diffR === direction) {
+        executeMove(fromR, fromC, toR, toC);
+        return true;
+      }
+
+      // Regular jump capture (2 steps forward or backward)
+      if (steps === 2) {
+        const midR = fromR + dr;
+        const midC = fromC + dc;
+        const captured = boardState[midR][midC];
+
+        if (captured !== "" && captured.startsWith(opponent)) {
+          boardState[midR][midC] = "";
+          executeMove(fromR, fromC, toR, toC);
+          return true;
+        }
+      }
+
+      document.getElementById("ruleMessage").textContent = "INVALID MOVE";
+      return false;
+    }
+
+    function executeMove(fromR, fromC, toR, toC) {
+      let piece = boardState[fromR][fromC];
+      boardState[fromR][fromC] = "";
+
+      // Promotion to King upon reaching the far end
+      if (piece === "W" && toR === 0) piece = "WK";
+      if (piece === "B" && toR === 7) piece = "BK";
+
+      boardState[toR][toC] = piece;
+      selectedOwn = null;
+      arrowSource = null;
+      preMove = null;
+
+      turn = (turn === "W") ? "B" : "W";
+
+      updateUI();
+      renderBoard();
+
+      if (!isVsBot) {
+        broadcast({ type: "MOVE", board: boardState, turn: turn });
+      } else {
+        if (turn === botTeam) {
+          triggerBotTurn();
+        }
+      }
+    }
+
+    function updateUI() {
+      const turnText = document.getElementById("turnText");
+      const isMyTurn = turn === myTeam;
+
+      turnText.textContent = turn === "W" ? "TURN: WHITE" : "TURN: BLACK";
+
+      if (isMyTurn) {
+        document.getElementById("ruleMessage").textContent = "YOUR TURN TO PLAY!";
+      } else {
+        document.getElementById("ruleMessage").textContent = isVsBot 
+          ? "BOT IS THINKING... (PRE-MOVE READY)"
+          : "OPPONENT'S TURN (PRE-MOVE READY)";
+      }
+    }
+
+    /* ---------------- SVG SOLID RED ARROWS ---------------- */
+
+    function renderArrows() {
+      const svg = document.getElementById("arrowLayer");
+      svg.innerHTML = "";
+
+      if (preMove) drawSolidRedArrow(preMove.fromR, preMove.fromC, preMove.toR, preMove.toC, svg);
+      if (prediction) drawSolidRedArrow(prediction.fromR, prediction.fromC, prediction.toR, prediction.toC, svg);
+    }
+
+    function drawSolidRedArrow(r1, c1, r2, c2, svg) {
+      const x1 = c1 * 60 + 30;
+      const y1 = r1 * 60 + 30;
+      const x2 = c2 * 60 + 30;
+      const y2 = r2 * 60 + 30;
+
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headLength = 16;
+      const shaftWidth = 6;
+
+      const endX = x2 - (headLength / 2) * Math.cos(angle);
+      const endY = y2 - (headLength / 2) * Math.sin(angle);
+
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", x1);
+      line.setAttribute("y1", y1);
+      line.setAttribute("x2", endX);
+      line.setAttribute("y2", endY);
+      line.setAttribute("stroke", "#ff0000");
+      line.setAttribute("stroke-width", shaftWidth);
+      line.setAttribute("stroke-linecap", "round");
+      svg.appendChild(line);
+
+      const p1X = x2;
+      const p1Y = y2;
+      const p2X = x2 - headLength * Math.cos(angle - Math.PI / 6);
+      const p2Y = y2 - headLength * Math.sin(angle - Math.PI / 6);
+      const p3X = x2 - headLength * Math.cos(angle + Math.PI / 6);
+      const p3Y = y2 - headLength * Math.sin(angle + Math.PI / 6);
+
+      const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+      polygon.setAttribute("points", `${p1X},${p1Y} ${p2X},${p2Y} ${p3X},${p3Y}`);
+      polygon.setAttribute("fill", "#ff0000");
+      polygon.setAttribute("stroke", "none");
+      svg.appendChild(polygon);
+    }
+
+    /* ---------------- SMART BOT (WITH FLYING KING LOGIC) ---------------- */
+
+    function playVsBot() {
+      isVsBot = true;
+      myTeam = Math.random() < 0.5 ? "W" : "B";
+      botTeam = myTeam === "W" ? "B" : "W";
+
+      document.getElementById("roomInfo").textContent = "MODE: VS SMART BOT";
+      document.getElementById("teamInfo").textContent = "YOU: " + (myTeam === "W" ? "WHITE (RANDOM)" : "BLACK (RANDOM)");
+
+      resetBoard();
+      updateUI();
+      renderBoard();
+
+      if (turn === botTeam) {
+        triggerBotTurn();
+      }
+    }
+
+    function triggerBotTurn() {
+      document.getElementById("ruleMessage").textContent = "BOT IS THINKING...";
+      setTimeout(() => {
+        makeBotMove();
+      }, 750);
+    }
+
+    function makeBotMove() {
+      const bestMove = getBestBotMove(boardState, botTeam);
+      if (!bestMove) {
+        document.getElementById("ruleMessage").textContent = "BOT HAS NO MOVES! YOU WIN!";
+        return;
+      }
+
+      let piece = boardState[bestMove.fromR][bestMove.fromC];
+      boardState[bestMove.fromR][bestMove.fromC] = "";
+
+      if (bestMove.isJump) {
+        boardState[bestMove.midR][bestMove.midC] = "";
+      }
+
+      if (piece === "W" && bestMove.toR === 0) piece = "WK";
+      if (piece === "B" && bestMove.toR === 7) piece = "BK";
+
+      boardState[bestMove.toR][bestMove.toC] = piece;
+
+      prediction = null;
+      selectedOwn = null;
+      arrowSource = null;
+      turn = myTeam;
+
+      updateUI();
+      renderBoard();
+
+      if (preMove) {
+        const pm = preMove;
+        preMove = null;
+        const currentP = boardState[pm.fromR][pm.fromC];
+        if (currentP !== "" && currentP.startsWith(myTeam) && boardState[pm.toR][pm.toC] === "") {
+          tryMove(pm.fromR, pm.fromC, pm.toR, pm.toC);
+        } else {
+          renderArrows();
+        }
+      }
+    }
+
+    function getBestBotMove(board, currentBotTeam) {
+      const depth = 3;
+      let moves = getAllLegalMoves(board, currentBotTeam);
+      if (moves.length === 0) return null;
+
+      const jumpMoves = moves.filter(m => m.isJump);
+      if (jumpMoves.length > 0) moves = jumpMoves;
+
+      let bestScore = -Infinity;
+      let bestMove = moves[0];
+
+      for (let move of moves) {
+        const newBoard = applySimulatedMove(board, move);
+        const score = minimax(newBoard, depth - 1, -Infinity, Infinity, false, currentBotTeam);
+        if (score > bestScore) {
+          bestScore = score;
+          bestMove = move;
+        }
+      }
+      return bestMove;
+    }
+
+    function minimax(board, depth, alpha, beta, isMaximizing, botColor) {
+      const oppColor = botColor === "W" ? "B" : "W";
+      const currentColor = isMaximizing ? botColor : oppColor;
+
+      if (depth === 0) return evaluateBoard(board, botColor);
+
+      let moves = getAllLegalMoves(board, currentColor);
+      if (moves.length === 0) return isMaximizing ? -9999 : 9999;
+
+      const jumpMoves = moves.filter(m => m.isJump);
+      if (jumpMoves.length > 0) moves = jumpMoves;
+
+      if (isMaximizing) {
+        let maxEval = -Infinity;
+        for (let move of moves) {
+          const newBoard = applySimulatedMove(board, move);
+          const evaluation = minimax(newBoard, depth - 1, alpha, beta, false, botColor);
+          maxEval = Math.max(maxEval, evaluation);
+          alpha = Math.max(alpha, evaluation);
+          if (beta <= alpha) break;
+        }
+        return maxEval;
+      } else {
+        let minEval = Infinity;
+        for (let move of moves) {
+          const newBoard = applySimulatedMove(board, move);
+          const evaluation = minimax(newBoard, depth - 1, alpha, beta, true, botColor);
+          minEval = Math.min(minEval, evaluation);
+          beta = Math.min(beta, evaluation);
+          if (beta <= alpha) break;
+        }
+        return minEval;
+      }
+    }
+
+    function evaluateBoard(board, botColor) {
+      const oppColor = botColor === "W" ? "B" : "W";
+      let score = 0;
+
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const p = board[r][c];
+          if (!p) continue;
+
+          let val = p.endsWith("K") ? 300 : 100;
+          if ((r === 3 || r === 4) && (c >= 2 && c <= 5)) val += 15;
+
+          if (p.startsWith(botColor)) score += val;
+          else if (p.startsWith(oppColor)) score -= val;
+        }
+      }
+      return score;
+    }
+
+    function getAllLegalMoves(board, player) {
+      const moves = [];
+      const opp = player === "W" ? "B" : "W";
+      const direction = player === "W" ? -1 : 1;
+
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const p = board[r][c];
+          if (!p || !p.startsWith(player)) continue;
+
+          const isKing = p.endsWith("K");
+
+          // 1. KING MOVES (FLYING KING)
+          if (isKing) {
+            for (let dr of [-1, 1]) {
+              for (let dc of [-1, 1]) {
+                let rStep = r + dr;
+                let cStep = c + dc;
+                let opponentFound = null;
+
+                while (rStep >= 0 && rStep < 8 && cStep >= 0 && cStep < 8) {
+                  const currentP = board[rStep][cStep];
+
+                  if (!opponentFound) {
+                    if (currentP === "") {
+                      moves.push({ fromR: r, fromC: c, toR: rStep, toC: cStep, isJump: false });
+                    } else if (currentP.startsWith(opp)) {
+                      opponentFound = { r: rStep, c: cStep };
+                    } else {
+                      break; // Own piece blocks
+                    }
+                  } else {
+                    if (currentP === "") {
+                      moves.push({
+                        fromR: r,
+                        fromC: c,
+                        toR: rStep,
+                        toC: cStep,
+                        isJump: true,
+                        midR: opponentFound.r,
+                        midC: opponentFound.c
+                      });
+                    } else {
+                      break; // Blocked behind captured piece
+                    }
+                  }
+
+                  rStep += dr;
+                  cStep += dc;
+                }
+              }
+            }
+          } else {
+            // 2. REGULAR PIECE MOVES
+            for (let dc of [-1, 1]) {
+              const toR = r + direction;
+              const toC = c + dc;
+
+              if (toR >= 0 && toR < 8 && toC >= 0 && toC < 8) {
+                if (board[toR][toC] === "") {
+                  moves.push({ fromR: r, fromC: c, toR, toC, isJump: false });
+                }
+              }
+
+              // Jumps (forward & backward)
+              for (let dr of [-1, 1]) {
+                const midR = r + dr;
+                const midC = c + dc;
+                const jumpR = r + dr * 2;
+                const jumpC = c + dc * 2;
+
+                if (jumpR >= 0 && jumpR < 8 && jumpC >= 0 && jumpC < 8) {
+                  if (board[midR][midC] !== "" && board[midR][midC].startsWith(opp) && board[jumpR][jumpC] === "") {
+                    moves.push({ fromR: r, fromC: c, toR: jumpR, toC: jumpC, isJump: true, midR, midC });
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      return moves;
+    }
+
+    function applySimulatedMove(board, move) {
+      const copy = board.map(row => [...row]);
+      let p = copy[move.fromR][move.fromC];
+      copy[move.fromR][move.fromC] = "";
+
+      if (move.isJump) copy[move.midR][move.midC] = "";
+
+      if (p === "W" && move.toR === 0) p = "WK";
+      if (p === "B" && move.toR === 7) p = "BK";
+
+      copy[move.toR][move.toC] = p;
+      return copy;
+    }
+
+    /* ---------------- MULTIPLAYER NETWORKING ---------------- */
+
+    function createRoom() {
+      isVsBot = false;
+      const code = Math.floor(1000 + Math.random() * 9000).toString();
+      currentRoomCode = code;
+      isHost = true;
+      document.getElementById("roomInput").value = code;
+
+      myTeam = Math.random() < 0.5 ? "W" : "B";
+      assignedGuestTeam = (myTeam === "W") ? "B" : "W";
+
+      document.getElementById("roomInfo").textContent = "ROOM: " + code;
+      document.getElementById("teamInfo").textContent = "YOUR TEAM: " + (myTeam === "W" ? "WHITE (RANDOM)" : "BLACK (RANDOM)");
+      document.getElementById("ruleMessage").textContent = "WAITING FOR OPPONENT...";
+
+      resetBoard();
+      updateUI();
+      renderBoard();
+
+      setupNetwork(code, true);
+    }
+
+    function joinRoom() {
+      isVsBot = false;
+      const input = document.getElementById("roomInput").value.trim();
+      if (!/^\d{4}$/.test(input)) {
+        alert("Please enter a valid 4-digit code.");
+        return;
+      }
+
+      currentRoomCode = input;
+      isHost = false;
+      myTeam = null;
+
+      document.getElementById("roomInfo").textContent = "ROOM: " + input;
+      document.getElementById("teamInfo").textContent = "CONNECTING & ASSIGNING TEAM...";
+
+      resetBoard();
+      renderBoard();
+
+      setupNetwork(input, false);
+    }
+
+    function setupNetwork(code, amIHost) {
+      if (localChannel) localChannel.close();
+      localChannel = new BroadcastChannel("checkers_room_" + code);
+      localChannel.onmessage = (e) => handleMessage(e.data);
+
+      const hostPeerId = "checkers-room-v3-" + code;
+
+      try {
+        if (typeof Peer !== "undefined") {
+          if (amIHost) {
+            if (peer) peer.destroy();
+            peer = new Peer(hostPeerId);
+            peer.on("connection", (conn) => {
+              p2pConn = conn;
+              conn.on("data", (data) => handleMessage(data));
+              conn.on("open", () => {
+                conn.send({
+                  type: "ASSIGN_TEAM",
+                  assignedTeam: assignedGuestTeam,
+                  board: boardState,
+                  turn: turn
+                });
+              });
+            });
+          } else {
+            if (peer) peer.destroy();
+            peer = new Peer();
+            peer.on("open", () => {
+              p2pConn = peer.connect(hostPeerId);
+              p2pConn.on("open", () => {
+                broadcast({ type: "REQUEST_TEAM" });
+              });
+              p2pConn.on("data", (data) => handleMessage(data));
+            });
+          }
+        }
+      } catch (err) {
+        console.log("Local mode active.");
+      }
+
+      if (!amIHost) broadcast({ type: "REQUEST_TEAM" });
+    }
+
+    function broadcast(data) {
+      if (localChannel) localChannel.postMessage(data);
+      if (p2pConn && p2pConn.open) p2pConn.send(data);
+    }
+
+    function handleMessage(data) {
+      if (!data) return;
+
+      if (data.type === "REQUEST_TEAM" && isHost) {
+        broadcast({
+          type: "ASSIGN_TEAM",
+          assignedTeam: assignedGuestTeam,
+          board: boardState,
+          turn: turn
+        });
+        document.getElementById("ruleMessage").textContent = "OPPONENT JOINED! GAME READY.";
+      } else if (data.type === "ASSIGN_TEAM" && !isHost) {
+        myTeam = data.assignedTeam;
+        boardState = data.board;
+        turn = data.turn;
+
+        document.getElementById("teamInfo").textContent = "YOUR TEAM: " + (myTeam === "W" ? "WHITE (RANDOM)" : "BLACK (RANDOM)");
+        renderBoard();
+        updateUI();
+      } else if (data.type === "MOVE") {
+        boardState = data.board;
+        turn = data.turn;
+        selectedOwn = null;
+        arrowSource = null;
+        prediction = null;
+
+        renderBoard();
+        updateUI();
+
+        if (preMove && turn === myTeam) {
+          const pm = preMove;
+          preMove = null;
+          const currentP = boardState[pm.fromR][pm.fromC];
+          if (currentP !== "" && currentP.startsWith(myTeam) && boardState[pm.toR][pm.toC] === "") {
+            tryMove(pm.fromR, pm.fromC, pm.toR, pm.toC);
+          } else {
+            renderArrows();
+          }
+        }
+      }
+    }
+
+    resetBoard();
+    renderBoard();
+  </script>
+</body>
+</html>
